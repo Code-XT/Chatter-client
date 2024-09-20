@@ -36,12 +36,12 @@ const EntryPage = () => {
 
   return (
     <div className="flex h-screen bg-gray-900 text-white">
-      <div className="m-auto">
-        <h1 className="text-4xl font-bold mb-8 text-center">
+      <div className="m-auto px-4 sm:px-6 lg:px-8">
+        <h1 className="text-3xl sm:text-4xl font-bold mb-6 sm:mb-8 text-center">
           Welcome to <br />
           ChatterBox
         </h1>
-        <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
+        <div className="bg-gray-800 p-6 sm:p-8 rounded-lg shadow-lg w-full sm:w-96">
           <form onSubmit={handleJoin}>
             <div className="mb-4">
               <label htmlFor="name" className="block text-sm font-medium mb-1">

@@ -11,6 +11,7 @@ import {
   FiSend,
   FiMenu,
 } from "react-icons/fi";
+import { IoMdContacts } from "react-icons/io";
 
 const ChatUI = ({ user, initialRoom }) => {
   const [showSidebar, setShowSidebar] = useState(false);
@@ -294,7 +295,7 @@ const ChatUI = ({ user, initialRoom }) => {
                 onClick={() => setShowUsers(!showUsers)}
                 className="lg:hidden text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none"
               >
-                Users
+                <IoMdContacts className="w-6 h-6" />
               </button>
             </div>
           </div>

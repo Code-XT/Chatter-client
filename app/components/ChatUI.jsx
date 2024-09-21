@@ -10,10 +10,15 @@ import {
   FiPaperclip,
   FiSend,
   FiMenu,
+  FiDownload,
 } from "react-icons/fi";
 import { IoMdContacts } from "react-icons/io";
+const CHUNK_SIZE = 64 * 1024; // 64 KB
 
 const ChatUI = ({ user, initialRoom }) => {
+  const [currentFile, setCurrentFile] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
   const [rooms, setRooms] = useState([{ id: initialRoom, name: initialRoom }]);
@@ -98,6 +103,40 @@ const ChatUI = ({ user, initialRoom }) => {
     }
   }, [socket, selectedRoom, user.name]);
 
+  useEffect(() => {
+    if (socket && selectedRoom) {
+      // Listen for incoming files
+      socket.on("fileReceived", (file) => {
+        console.log("File received:", file);
+        const fileMessage = {
+          id: Date.now(),
+          type: "file",
+          sender: file.sender,
+          room: selectedRoom.id,
+          timestamp: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          fileName: file.fileName,
+          fileData: file.fileData,
+        };
+        setMessages((prevMessages) => [...prevMessages, fileMessage]);
+      });
+
+      // Listen for progress updates
+      socket.on("progressUpdate", ({ fileName, progress }) => {
+        if (fileName === currentFile?.fileName) {
+          setUploadProgress(progress);
+        }
+      });
+
+      return () => {
+        socket.off("fileReceived");
+        socket.off("progressUpdate");
+      };
+    }
+  }, [socket, selectedRoom, currentFile]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -137,6 +176,7 @@ const ChatUI = ({ user, initialRoom }) => {
     if (inputMessage.trim() && socket) {
       const newMessage = {
         id: Date.now(),
+        type: "text",
         text: inputMessage,
         sender: user.name,
         room: selectedRoom.id,
@@ -165,9 +205,31 @@ const ChatUI = ({ user, initialRoom }) => {
     setInputMessage(inputMessage + emoji);
   };
 
-  const handleFileUpload = (e) => {
-    console.log("File uploaded:", e.target.files[0]);
-    // Implement file upload logic here
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file && socket) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const fileData = new Uint8Array(reader.result);
+        sendFileInChunks(fileData, file.name);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  };
+
+  const sendFileInChunks = (fileData, fileName) => {
+    const totalChunks = Math.ceil(fileData.byteLength / CHUNK_SIZE);
+    for (let i = 0; i < totalChunks; i++) {
+      const chunk = fileData.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+      socket.emit("sendFileChunk", {
+        fileName,
+        chunk: Array.from(chunk),
+        chunkIndex: i,
+        totalChunks,
+        roomId: selectedRoom.id,
+        sender: user.name,
+      });
+    }
   };
 
   const handleRoomChange = (newRoom) => {
@@ -191,6 +253,59 @@ const ChatUI = ({ user, initialRoom }) => {
   const filteredRooms = rooms.filter((room) =>
     room.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const renderMessage = (message) => {
+    const isOwnMessage = message.sender === user.name;
+    return (
+      <div
+        key={message.id}
+        className={`flex ${
+          isOwnMessage ? "justify-end" : "justify-start"
+        } mb-4`}
+      >
+        <div
+          className={`flex ${
+            isOwnMessage ? "flex-row-reverse" : "flex-row"
+          } items-end max-w-3/4`}
+        >
+          <img
+            src={`https://api.multiavatar.com/${message.sender}.png`}
+            alt={`${message.sender}'s avatar`}
+            className="w-8 h-8 rounded-full mx-2"
+          />
+          <div
+            className={`px-4 py-2 rounded-lg ${
+              isOwnMessage
+                ? "bg-blue-500 text-white"
+                : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white"
+            }`}
+          >
+            <div className="flex items-center mb-1">
+              <span className="font-semibold text-sm mr-2">
+                {message.sender}
+              </span>
+              <span className="text-xs opacity-75">{message.timestamp}</span>
+            </div>
+            {message.type === "text" ? (
+              <p>{message.text}</p>
+            ) : (
+              <div className="flex items-center">
+                <FiPaperclip className="mr-2" />
+                <span className="truncate mr-2">{message.fileName}</span>
+                <a
+                  href={`data:application/octet-stream;base64,${message.fileData}`}
+                  download={message.fileName}
+                  className="text-blue-400 hover:text-blue-600 dark:text-blue-300 dark:hover:text-blue-500"
+                >
+                  <FiDownload />
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`flex flex-col h-screen ${darkMode ? "dark" : ""}`}>
@@ -301,31 +416,10 @@ const ChatUI = ({ user, initialRoom }) => {
           </div>
 
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4">
             {messages
               .filter((message) => message.room === selectedRoom.id)
-              .map((message) => (
-                <div key={message.id} className="flex items-start">
-                  <img
-                    src={`https://api.multiavatar.com/${message.sender}.png`}
-                    alt={`${message.sender}'s avatar`}
-                    className="w-10 h-10 rounded-full mr-3"
-                  />
-                  <div>
-                    <div className="flex items-center">
-                      <span className="font-semibold text-gray-800 dark:text-white mr-2">
-                        {message.sender}
-                      </span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {message.timestamp}
-                      </span>
-                    </div>
-                    <p className="text-gray-800 dark:text-white">
-                      {message.text}
-                    </p>
-                  </div>
-                </div>
-              ))}
+              .map(renderMessage)}
             <div ref={messagesEndRef} />
           </div>
 
@@ -373,6 +467,7 @@ const ChatUI = ({ user, initialRoom }) => {
                   className="hidden"
                   onChange={handleFileUpload}
                   aria-label="Attach file"
+                  ref={fileInputRef}
                 />
                 <FiPaperclip className="w-6 h-6 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" />
               </label>
